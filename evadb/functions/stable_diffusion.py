@@ -24,16 +24,20 @@ from PIL import Image
 from evadb.catalog.catalog_type import NdArrayType
 from evadb.configuration.configuration_manager import ConfigurationManager
 from evadb.functions.abstract.abstract_function import AbstractFunction
-from evadb.functions.decorators.decorators import forward
+from evadb.functions.decorators.decorators import forward, setup
 from evadb.functions.decorators.io_descriptors.data_types import PandasDataframe
 from evadb.utils.generic_utils import try_to_import_replicate
 
 
 class StableDiffusion(AbstractFunction):
+    def __init__(self):
+        print("Initializing cache")
+        self.cache = {}  # Initialize an empty dictionary for caching results
+
     @property
     def name(self) -> str:
         return "StableDiffusion"
-
+    
     def setup(
         self,
     ) -> None:
@@ -61,42 +65,56 @@ class StableDiffusion(AbstractFunction):
         ],
     )
     def forward(self, text_df):
-        try_to_import_replicate()
-        import replicate
+        print("Hello forward", text_df)
+        # Check if the input prompt is in the cache
+        prompt = text_df[text_df.columns[0]].iloc[0]
+        cached_result = self.cache.get(prompt)
+        print("current cache", self.cache)
+        print("cached result", cached_result)
+        if cached_result is not None:
+            # If cached result exists, return it directly
+            return cached_result
+        else:
+            try_to_import_replicate()
+            import replicate
 
-        # Register API key, try configuration manager first
-        replicate_api_key = ConfigurationManager().get_value(
-            "third_party", "REPLICATE_API_TOKEN"
-        )
-        # If not found, try OS Environment Variable
-        if len(replicate_api_key) == 0:
-            replicate_api_key = os.environ.get("REPLICATE_API_TOKEN", "")
-        assert (
-            len(replicate_api_key) != 0
-        ), "Please set your Replicate API key in evadb.yml file (third_party, replicate_api_token) or environment variable (REPLICATE_API_TOKEN)"
-        os.environ["REPLICATE_API_TOKEN"] = replicate_api_key
+            # Register API key, try configuration manager first
+            replicate_api_key = ConfigurationManager().get_value(
+                "third_party", "REPLICATE_API_TOKEN"
+            )
+            # If not found, try OS Environment Variable
+            if len(replicate_api_key) == 0:
+                replicate_api_key = os.environ.get("REPLICATE_API_TOKEN", "")
+            assert (
+                len(replicate_api_key) != 0
+            ), "Please set your Replicate API key in evadb.yml file (third_party, replicate_api_token) or environment variable (REPLICATE_API_TOKEN)"
+            os.environ["REPLICATE_API_TOKEN"] = replicate_api_key
 
-        model_id = (
-            replicate.models.get("stability-ai/stable-diffusion").versions.list()[0].id
-        )
+            model_id = (
+                replicate.models.get("stability-ai/stable-diffusion").versions.list()[0].id
+            )
 
-        def generate_image(text_df: PandasDataframe):
-            results = []
-            queries = text_df[text_df.columns[0]]
-            for query in queries:
-                output = replicate.run(
-                    "stability-ai/stable-diffusion:" + model_id, input={"prompt": query}
-                )
+            def generate_image(text_df: PandasDataframe):
+                print("generating image from stable diffusion")
+                results = []
+                queries = text_df[text_df.columns[0]]
+                print("queries:", queries)
+                for query in queries:
+                    output = replicate.run(
+                        "stability-ai/stable-diffusion:" + model_id, input={"prompt": query}
+                    )
 
-                # Download the image from the link
-                response = requests.get(output[0])
-                image = Image.open(BytesIO(response.content))
+                    # Download the image from the link
+                    response = requests.get(output[0])
+                    image = Image.open(BytesIO(response.content))
 
-                # Convert the image to an array format suitable for the DataFrame
-                frame = np.array(image)
-                results.append(frame)
+                    # Convert the image to an array format suitable for the DataFrame
+                    frame = np.array(image)
+                    results.append(frame)
 
-            return results
+                return results
 
-        df = pd.DataFrame({"response": generate_image(text_df=text_df)})
-        return df
+            df = pd.DataFrame({"response": generate_image(text_df=text_df)})
+            # Cache the generated image before returning
+            self.cache[prompt]= df
+            return df
