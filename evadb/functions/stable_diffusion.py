@@ -36,7 +36,6 @@ from evadb.utils.generic_utils import try_to_import_replicate
 
 class StableDiffusion(AbstractFunction):
     def __init__(self):
-        print("Initializing cache")
         self.cache = {}  # Initialize an empty dictionary for caching results
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         self.bert_model = BertModel.from_pretrained('bert-base-uncased')
@@ -76,7 +75,7 @@ class StableDiffusion(AbstractFunction):
         # print("in cosine similarity")
         # Calculate cosine similarity between the query embedding and cached embeddings
         similarities = cosine_similarity(query_embedding, cached_embeddings)
-        print("returning cosine similarity", similarities)
+        #print("returning cosine similarity", similarities)
         return similarities
 
     @forward(
@@ -119,10 +118,10 @@ class StableDiffusion(AbstractFunction):
             # Find the most similar cached prompt
             most_similar_index = np.argmax(similarities)
             most_similar_prompt = cached_prompts[most_similar_index]
-            print("The processed prompt = ", processed_prompt, "Similar prompt = ",
-                  most_similar_prompt, "the threshold = ", similarities[0, most_similar_index])
+            # print("The processed prompt = ", processed_prompt, "Similar prompt = ",
+            #       most_similar_prompt, "the threshold = ", similarities[0, most_similar_index])
             if similarities[0, most_similar_index] > 0.97:
-                print(f"Using cached result for similar prompt: {most_similar_prompt}")
+                print(f"Using cached result for prompt : {prompt}")
                 return self.cache[most_similar_prompt]
 
         try_to_import_replicate()
@@ -145,10 +144,10 @@ class StableDiffusion(AbstractFunction):
         )
 
         def generate_image(text_df: PandasDataframe):
-            print("generating image from stable diffusion")
+            print("Generating image using stable diffusion for prompt: ", prompt)
             results = []
             queries = text_df[text_df.columns[0]]
-            print("queries:", queries)
+            #print("queries:", queries)
             for query in queries:
                 output = replicate.run(
                     "stability-ai/stable-diffusion:" + model_id, input={"prompt": query}
